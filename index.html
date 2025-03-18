@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日历活动热力图</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: #24292e;
+            background-color: #f6f8fa;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .header {
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .stats-container {
+            display: flex;
+            gap: 20px;
+            margin: 20px 0;
+            flex-wrap: wrap;
+        }
+
+        .stat-card {
+            background-color: white;
+            border-radius: 6px;
+            padding: 15px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .stat-title {
+            font-size: 12px;
+            color: #586069;
+            margin-bottom: 5px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: #24292e;
+        }
+
+        .calendar-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: repeat(4, auto);
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .month-container {
+            background-color: white;
+            border-radius: 6px;
+            padding: 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+
+        .month-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #24292e;
+            text-align: left;
+        }
+
+        .weekday-labels {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            margin-bottom: 4px;
+            justify-items: center;
+        }
+
+        .weekday-label {
+            font-size: 12px;
+            color: #586069;
+            text-align: center;
+            width: 20px;
+        }
+
+        .month-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 2px;
+            justify-items: center;
+        }
+
+        .day {
+            width: 20px;
+            height: 20px;
+            margin: 3px;
+            background-color: #ebedf0;
+            border-radius: 3px;
+            transition: transform 0.15s ease;
+            position: relative;
+        }
+        
+        .day[data-level="1"] { background-color: #9be9a8; }
+        .day[data-level="2"] { background-color: #40c463; }
+        .day[data-level="3"] { background-color: #30a14e; }
+        .day[data-level="4"] { background-color: #216e39; }
+
+        .day:hover {
+            transform: scale(1.2);
+            z-index: 1;
+        }
+
+        .empty-day {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .file-input-container {
+            margin: 20px 0;
+        }
+        
+        .color-legend {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            gap: 5px;
+            font-size: 12px;
+            color: #586069;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-right: 10px;
+        }
+        
+        .legend-color {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            margin-right: 4px;
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 768px) {
+            .calendar-container {
+                grid-template-columns: repeat(2, 1fr);
+                grid-template-rows: repeat(6, auto);
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .calendar-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: repeat(12, auto);
+            }
+        }
+
+        /* 修改工具提示样式 */
+        .tooltip {
+            position: fixed;
+            background-color: rgba(0, 0, 0, 0.85);
+            color: white;
+            padding: 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            line-height: 1.6;
+            z-index: 1000;
+            pointer-events: none;
+            white-space: pre-line;
+            max-width: 400px;
+            max-height: 80vh;
+            overflow-y: auto;
+            display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* 添加工具提示中不同类型信息的样式 */
+        .tooltip-date {
+            color: #ffffff;             /* 日期 */
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .tooltip-title {
+            font-size: 18px;            /* 标题更大 */
+            font-weight: 600;           /* 标题加粗 */
+            margin: 4px 0;
+            color: #ffffff;
+        }
+
+        .tooltip-time {
+            color: #ffffff;
+            font-size: 14px;
+            margin: 4px 0;
+        }
+
+        .tooltip-duration {
+            color: #ffffff;             /* 时长 */
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .tooltip-location {
+            color: #ffffff;             /* 地点 */
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .search-container {
+            margin: 20px 0;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .search-input {
+            padding: 8px 12px;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            font-size: 14px;
+            flex-grow: 1;
+            max-width: 300px;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .search-input:focus {
+            border-color: #0366d6;
+        }
+
+        .search-button {
+            padding: 8px 16px;
+            background-color: #0366d6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+
+        .search-button:hover {
+            background-color: #0255b3;
+        }
+
+        #resetButton {
+            background-color: #6c757d;
+        }
+
+        #resetButton:hover {
+            background-color: #5a6268;
+        }
+
+        
+        /* 添加多事件标记样式
+        .day[data-events-count]:after {
+            content: attr(data-events-count);
+            position: absolute;
+            top: -3px;
+            right: -3px;
+            background-color: #0366d6;
+            color: white;
+            font-size: 9px;
+            padding: 1px 4px;
+            border-radius: 8px;
+            line-height: 1;
+        } */
+
+        /* 添加事件分隔线样式 */
+        .tooltip-divider {
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.2);
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">Life打卡日历</h1>
+    </div>
+    
+    <div class="file-input-container">
+        <input type="file" id="icsFileInput" accept=".ics">
+    </div>
+
+    <!-- 添加搜索框容器 -->
+    <div class="search-container">
+        <input type="text" id="searchInput" placeholder="搜索事件..." class="search-input">
+        <button id="searchButton" class="search-button">搜索</button>
+        <button id="resetButton" class="search-button">重置</button>
+    </div>
+    
+    <div id="stats" class="stats-container">
+        <!-- 统计信息将在JS中生成 -->
+    </div>
+    
+    <div id="heatmap" class="calendar-container"></div>
+    
+    <div class="color-legend">
+        <span>颜色图例：</span>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #ebedf0;"></div>
+            <span>无活动</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #9be9a8;"></div>
+            <span>≤60分钟</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #40c463;"></div>
+            <span>≤120分钟</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #30a14e;"></div>
+            <span>≤180分钟</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-color" style="background-color: #216e39;"></div>
+            <span>>180分钟</span>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js"></script>
+    <script src="calendar.js"></script>
+
+    <script>
+        // 在body元素下添加自定义工具提示容器
+        document.addEventListener('DOMContentLoaded', function() {
+            const tooltipDiv = document.createElement('div');
+            tooltipDiv.className = 'custom-tooltip';
+            tooltipDiv.style.opacity = 0;
+            document.body.appendChild(tooltipDiv);
+            
+            // 全局变量以便在calendar.js中访问
+            window.customTooltip = tooltipDiv;
+        });
+    </script>
+
+    <!-- 在 body 末尾添加工具提示容器 -->
+    <div id="tooltip" class="tooltip"></div>
+</body>
+</html> 
