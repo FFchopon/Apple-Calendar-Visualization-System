@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>日历活动热力图</title>
+    <title>Life打卡日历</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -68,6 +68,36 @@
             border-radius: 6px;
             padding: 12px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+            transition: all 0.3s ease;
+            position: relative;
+            cursor: pointer;
+        }
+
+        .month-container:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+        }
+
+        .month-container:after {
+            content: "";
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 0 8px 8px;
+            border-color: transparent transparent #0366d6 transparent;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .month-container:hover:after {
+            opacity: 1;
+        }
+
+        .month-container:hover .month-title {
+            color: #0366d6;
         }
 
         .month-title {
@@ -283,6 +313,374 @@
             background-color: rgba(255, 255, 255, 0.2);
             margin: 8px 0;
         }
+
+        /* 修改模态框样式 */
+        .month-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.5);
+            padding-top: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .month-modal.show {
+            opacity: 1;
+        }
+
+        .month-modal-content {
+            background-color: #fefefe;
+            margin: 1% auto;
+            padding: 25px;
+            border: none;
+            width: 90%;
+            max-width: 1000px;
+            border-radius: 12px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+            transform: translateY(-20px);
+            transition: transform 0.3s ease;
+            position: relative;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .month-modal.show .month-modal-content {
+            transform: translateY(0);
+        }
+
+        .month-modal-close {
+            position: absolute;
+            right: 20px;
+            top: 20px;
+            color: #666;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+
+        .month-modal-close:hover {
+            background-color: #f0f0f0;
+            color: #333;
+        }
+
+        #monthModalTitle {
+            font-size: 28px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .month-modal-calendar {
+            margin-top: 15px;
+        }
+
+        /* 改进单月详细视图样式 */
+        .detailed-month-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .detailed-weekday-labels {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            margin-bottom: 4px;
+        }
+
+        .detailed-weekday-label {
+            text-align: center;
+            font-weight: 600;
+            padding: 4px 2px;
+            color: #606060;
+            font-size: 12px;
+        }
+
+        .detailed-day {
+            min-height: 80px;
+            max-height: 120px;
+            border: 1px solid #e8e8e8;
+            border-radius: 6px;
+            padding: 6px;
+            position: relative;
+            transition: all 0.2s ease;
+            background-color: #fff;
+            overflow: hidden;
+        }
+
+        .detailed-day:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border-color: #ccc;
+        }
+
+        .detailed-day-header {
+            text-align: right;
+            font-size: 16px;
+            color: #888;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .detailed-day-events {
+            font-size: 12px;
+            overflow-y: auto;
+            max-height: 80px;
+            padding-right: 4px;
+        }
+
+        .detailed-day-events::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .detailed-day-events::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        .detailed-day-events::-webkit-scrollbar-thumb {
+            background: #ccc;
+            border-radius: 4px;
+        }
+
+        .detailed-event {
+            padding: 6px 8px;
+            margin-bottom: 4px;
+            border-radius: 4px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 11px;
+            line-height: 1.3;
+        }
+
+        .detailed-event:hover {
+            transform: translateX(3px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.08);
+        }
+
+        .detailed-event[data-level="1"] { 
+            background-color: #e6f7eb; 
+            border-left-color: #9be9a8;
+            color: #2e7d41;
+        }
+        .detailed-event[data-level="2"] { 
+            background-color: #c2f0d1; 
+            border-left-color: #40c463;
+            color: #216e39;
+        }
+        .detailed-event[data-level="3"] { 
+            background-color: #a7e9bd; 
+            border-left-color: #30a14e;
+            color: #165c2a;
+        }
+        .detailed-event[data-level="4"] { 
+            background-color: #88d8a5; 
+            border-left-color: #216e39;
+            color: #103d1d;
+        }
+
+        .detailed-empty-day {
+            background-color: #f9f9f9;
+            min-height: 80px;
+            max-height: 120px;
+            border-radius: 8px;
+            border: 1px dashed #e0e0e0;
+        }
+
+        /* 添加今天的高亮样式 */
+        .detailed-day.today {
+            background-color: #fcfff5;
+            border: 2px solid #40c463;
+        }
+
+        .detailed-day.today .detailed-day-header {
+            color: #216e39;
+            font-weight: bold;
+        }
+
+        /* 添加事件弹窗样式 */
+        .event-detail-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            z-index: 1100;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .event-detail-modal.show {
+            opacity: 1;
+        }
+
+        .event-detail-content {
+            position: relative;
+            max-width: 500px;
+            margin: 10% auto;
+            background-color: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            transform: translateY(-20px);
+            transition: transform 0.3s ease;
+        }
+
+        .event-detail-modal.show .event-detail-content {
+            transform: translateY(0);
+        }
+
+        .event-close {
+            position: absolute;
+            right: 15px;
+            top: 15px;
+            color: #666;
+            font-size: 22px;
+            cursor: pointer;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+        }
+
+        .event-close:hover {
+            background-color: #f0f0f0;
+            color: #333;
+        }
+
+        .event-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+
+        .event-info {
+            margin-bottom: 8px;
+            display: flex;
+        }
+
+        .event-info-label {
+            width: 80px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .event-info-value {
+            flex: 1;
+            color: #333;
+        }
+
+        /* 添加其他样式 */
+        .month-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 0 4px;
+        }
+
+        .month-control-button {
+            background-color: #f5f5f5;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #333;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s ease;
+        }
+
+        .month-control-button:hover {
+            background-color: #e8e8e8;
+        }
+
+        .month-control-button svg {
+            width: 16px;
+            height: 16px;
+            margin-right: 5px;
+        }
+
+        /* 添加响应式设计 */
+        @media screen and (max-height: 800px) {
+            .detailed-day {
+                min-height: 70px;
+                max-height: 100px;
+            }
+            
+            .detailed-day-events {
+                max-height: 60px;
+            }
+            
+            .detailed-event {
+                padding: 4px 6px;
+                margin-bottom: 3px;
+            }
+        }
+
+        @media screen and (max-height: 600px) {
+            .detailed-day {
+                min-height: 60px;
+                max-height: 80px;
+            }
+            
+            .detailed-day-events {
+                max-height: 50px;
+            }
+        }
+
+        .month-container:hover .click-hint {
+            opacity: 1;
+            animation: pulseHint 1.5s infinite;
+        }
+
+        /* 为单月视图添加提示文本 */
+        .month-tooltip {
+            position: absolute;
+            bottom: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+            z-index: 3;
+        }
+
+        .month-container:hover .month-tooltip {
+            opacity: 1;
+            bottom: -25px;
+        }
     </style>
 </head>
 <body>
@@ -349,5 +747,14 @@
 
     <!-- 在 body 末尾添加工具提示容器 -->
     <div id="tooltip" class="tooltip"></div>
+
+    <!-- 在body末尾添加模态框 -->
+    <div id="monthModal" class="month-modal">
+        <div class="month-modal-content">
+            <span class="month-modal-close">&times;</span>
+            <h2 id="monthModalTitle">月份详情</h2>
+            <div id="monthModalCalendar" class="month-modal-calendar"></div>
+        </div>
+    </div>
 </body>
 </html> 
