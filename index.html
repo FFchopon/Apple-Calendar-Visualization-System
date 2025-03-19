@@ -478,22 +478,22 @@
         .detailed-event[data-level="1"] { 
             background-color: #e6f7eb; 
             border-left-color: #9be9a8;
-            color: #2e7d41;
+            color: #000000;
         }
         .detailed-event[data-level="2"] { 
             background-color: #c2f0d1; 
             border-left-color: #40c463;
-            color: #216e39;
+            color: #000000;
         }
         .detailed-event[data-level="3"] { 
             background-color: #a7e9bd; 
             border-left-color: #30a14e;
-            color: #165c2a;
+            color: #000000;
         }
         .detailed-event[data-level="4"] { 
             background-color: #88d8a5; 
             border-left-color: #216e39;
-            color: #103d1d;
+            color: #000000;
         }
 
         .detailed-empty-day {
@@ -504,14 +504,14 @@
             border: 1px dashed #e0e0e0;
         }
 
-        /* 添加今天的高亮样式 */
+        /* 修改今天的高亮样式，使用CSS变量 */
         .detailed-day.today {
-            background-color: #fcfff5;
-            border: 2px solid #40c463;
+            background-color: rgba(var(--current-level-1-rgb), 0.1);
+            border: 2px solid var(--current-level-3);
         }
 
         .detailed-day.today .detailed-day-header {
-            color: #216e39;
+            color: var(--current-level-4);
             font-weight: bold;
         }
 
@@ -681,11 +681,181 @@
             opacity: 1;
             bottom: -25px;
         }
+
+        /* 配色选择器样式 */
+        .color-scheme-selector {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .color-scheme-select {
+            padding: 6px 10px;
+            border: 1px solid #e1e4e8;
+            border-radius: 6px;
+            font-size: 14px;
+            background-color: white;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .color-scheme-select:hover {
+            border-color: #0366d6;
+        }
+        
+        /* 为不同配色方案定义 CSS 变量 */
+        :root {
+            /* 绿色系 - 默认 */
+            --color-level-1: #9be9a8;
+            --color-level-2: #40c463;
+            --color-level-3: #30a14e;
+            --color-level-4: #216e39;
+            
+            /* 变量名称用于将颜色应用到界面元素 */
+            --current-level-1: var(--color-level-1);
+            --current-level-2: var(--color-level-2);
+            --current-level-3: var(--color-level-3);
+            --current-level-4: var(--color-level-4);
+
+            /* 绿色系 - 默认 */
+            --color-level-1-rgb: 155, 233, 168;
+            --color-level-2-rgb: 64, 196, 99;
+            --color-level-3-rgb: 48, 161, 78;
+            --color-level-4-rgb: 33, 110, 57;
+            
+            /* 当前使用的颜色RGB值 */
+            --current-level-1-rgb: var(--color-level-1-rgb);
+            --current-level-2-rgb: var(--color-level-2-rgb);
+            --current-level-3-rgb: var(--color-level-3-rgb);
+            --current-level-4-rgb: var(--color-level-4-rgb);
+        }
+        
+        /* 修改所有使用颜色的地方，使用 CSS 变量 */
+        .day[data-level="1"] { background-color: var(--current-level-1); }
+        .day[data-level="2"] { background-color: var(--current-level-2); }
+        .day[data-level="3"] { background-color: var(--current-level-3); }
+        .day[data-level="4"] { background-color: var(--current-level-4); }
+        
+        /* 修改图例颜色 */
+        .legend-color[data-level="1"] { background-color: var(--current-level-1); }
+        .legend-color[data-level="2"] { background-color: var(--current-level-2); }
+        .legend-color[data-level="3"] { background-color: var(--current-level-3); }
+        .legend-color[data-level="4"] { background-color: var(--current-level-4); }
+        
+        /* 修改详细事件颜色 */
+        .detailed-event[data-level="1"] { 
+            background-color: var(--current-level-1-light); 
+            border-left-color: var(--current-level-1);
+        }
+        .detailed-event[data-level="2"] { 
+            background-color: var(--current-level-2-light); 
+            border-left-color: var(--current-level-2);
+        }
+        .detailed-event[data-level="3"] { 
+            background-color: var(--current-level-3-light); 
+            border-left-color: var(--current-level-3);
+        }
+        .detailed-event[data-level="4"] { 
+            background-color: var(--current-level-4-light); 
+            border-left-color: var(--current-level-4);
+        }
+        
+        /* 定义各种颜色方案 */
+        /* 蓝色系 */
+        .color-scheme-blue {
+            --current-level-1: #9be4ff;
+            --current-level-2: #40a6d7;
+            --current-level-3: #2884b8;
+            --current-level-4: #195b83;
+            --current-level-1-light: #e6f5fb;
+            --current-level-2-light: #c2e5f5;
+            --current-level-3-light: #a7d8ed;
+            --current-level-4-light: #88c8e6;
+            
+            /* RGB值 */
+            --current-level-1-rgb: 155, 228, 255;
+            --current-level-2-rgb: 64, 166, 215;
+            --current-level-3-rgb: 40, 132, 184;
+            --current-level-4-rgb: 25, 91, 131;
+        }
+        
+        /* 红色系 */
+        .color-scheme-red {
+            --current-level-1: #ffb3b3;
+            --current-level-2: #ff6666;
+            --current-level-3: #e53935;
+            --current-level-4: #b71c1c;
+            --current-level-1-light: #ffecec;
+            --current-level-2-light: #ffd6d6;
+            --current-level-3-light: #ffbdbd;
+            --current-level-4-light: #ffa1a1;
+            
+            /* RGB值 */
+            --current-level-1-rgb: 255, 179, 179;
+            --current-level-2-rgb: 255, 102, 102;
+            --current-level-3-rgb: 229, 57, 53;
+            --current-level-4-rgb: 183, 28, 28;
+        }
+        
+        /* 紫色系 */
+        .color-scheme-purple {
+            --current-level-1: #d4b3ff;
+            --current-level-2: #b266ff;
+            --current-level-3: #8c33ff;
+            --current-level-4: #6600cc;
+            --current-level-1-light: #f4ecff;
+            --current-level-2-light: #e6d6ff;
+            --current-level-3-light: #d9bdff;
+            --current-level-4-light: #c9a1ff;
+            
+            /* RGB值 */
+            --current-level-1-rgb: 212, 179, 255;
+            --current-level-2-rgb: 178, 102, 255;
+            --current-level-3-rgb: 140, 51, 255;
+            --current-level-4-rgb: 102, 0, 204;
+        }
+        
+        /* 橙色系 */
+        .color-scheme-orange {
+            --current-level-1: #ffd4a3;
+            --current-level-2: #ffb347;
+            --current-level-3: #ff9800;
+            --current-level-4: #e65100;
+            --current-level-1-light: #fff4e6;
+            --current-level-2-light: #ffe6cc;
+            --current-level-3-light: #ffd9b3;
+            --current-level-4-light: #ffc999;
+            
+            /* RGB值 */
+            --current-level-1-rgb: 255, 212, 163;
+            --current-level-2-rgb: 255, 179, 71;
+            --current-level-3-rgb: 255, 152, 0;
+            --current-level-4-rgb: 230, 81, 0;
+        }
+        
+        /* 绿色系 - 为详细视图添加浅色背景 */
+        :root {
+            --current-level-1-light: #e6f7eb;
+            --current-level-2-light: #c2f0d1;
+            --current-level-3-light: #a7e9bd;
+            --current-level-4-light: #88d8a5;
+        }
     </style>
 </head>
 <body>
     <div class="header">
         <h1 class="title">Life打卡日历</h1>
+        <div class="color-scheme-selector">
+            <label for="colorScheme">配色方案：</label>
+            <select id="colorScheme" class="color-scheme-select">
+                <option value="green">绿色系</option>
+                <option value="blue">蓝色系</option>
+                <option value="red">红色系</option>
+                <option value="purple">紫色系</option>
+                <option value="orange">橙色系</option>
+            </select>
+        </div>
     </div>
     
     <div class="file-input-container">
@@ -712,19 +882,19 @@
             <span>无活动</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color" style="background-color: #9be9a8;"></div>
+            <div class="legend-color" data-level="1"></div>
             <span>≤60分钟</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color" style="background-color: #40c463;"></div>
+            <div class="legend-color" data-level="2"></div>
             <span>≤120分钟</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color" style="background-color: #30a14e;"></div>
+            <div class="legend-color" data-level="3"></div>
             <span>≤180分钟</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color" style="background-color: #216e39;"></div>
+            <div class="legend-color" data-level="4"></div>
             <span>>180分钟</span>
         </div>
     </div>

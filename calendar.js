@@ -44,6 +44,9 @@ class CalendarHeatmap {
                 this.closeMonthModal();
             }
         });
+
+        // 初始化配色方案
+        this.setupColorScheme();
     }
 
     setupFileInput() {
@@ -890,7 +893,7 @@ class CalendarHeatmap {
         if (event.location) {
             eventHtml += `
                 <div class="event-info">
-                    <div class="event-info-label">地点:</div>
+                    <div class="event-info-label">📍</div>
                     <div class="event-info-value">${event.location}</div>
                 </div>
             `;
@@ -899,7 +902,7 @@ class CalendarHeatmap {
         if (event.description) {
             eventHtml += `
                 <div class="event-info">
-                    <div class="event-info-label">描述:</div>
+                    <div class="event-info-label">📑</div>
                     <div class="event-info-value">${event.description}</div>
                 </div>
             `;
@@ -930,6 +933,54 @@ class CalendarHeatmap {
                 eventModal.style.display = 'none';
             }, 300);
         }
+    }
+
+    // 添加配色方案切换功能
+    setupColorScheme() {
+        const colorSchemeSelect = document.getElementById('colorScheme');
+        if (colorSchemeSelect) {
+            // 设置初始值（从本地存储加载，如果有的话）
+            const savedScheme = localStorage.getItem('calendarColorScheme') || 'green';
+            colorSchemeSelect.value = savedScheme;
+            this.applyColorScheme(savedScheme);
+            
+            // 监听变化
+            colorSchemeSelect.addEventListener('change', (e) => {
+                const scheme = e.target.value;
+                this.applyColorScheme(scheme);
+                // 保存到本地存储
+                localStorage.setItem('calendarColorScheme', scheme);
+            });
+        }
+    }
+    
+    // 应用配色方案
+    applyColorScheme(scheme) {
+        // 移除所有现有的配色类
+        document.body.classList.remove(
+            'color-scheme-green',
+            'color-scheme-blue',
+            'color-scheme-red',
+            'color-scheme-purple',
+            'color-scheme-orange'
+        );
+        
+        // 如果不是绿色系（默认），则添加相应的配色类
+        if (scheme !== 'green') {
+            document.body.classList.add(`color-scheme-${scheme}`);
+        }
+        
+        // 更新配色方案名称显示
+        const schemeTitles = {
+            'green': '绿色系',
+            'blue': '蓝色系',
+            'red': '红色系',
+            'purple': '紫色系',
+            'orange': '橙色系'
+        };
+        
+        // 如果需要，可以在界面上其他地方显示当前配色方案名称
+        console.log(`应用配色方案: ${schemeTitles[scheme]}`);
     }
 }
 
