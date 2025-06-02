@@ -1,10 +1,81 @@
 class CalendarHeatmap {
     constructor() {
+        this.loadICAL();
+        this.levelSchemes = {
+            hourly: {
+                thresholds: [60, 120, 180, 240, 300, 360], // 分钟数：1-6小时
+                labels: ['≤1小时', '≤2小时', '≤3小时', '≤4小时', '≤5小时', '≤6小时', '>6小时']
+            },
+            halfHour: {
+                thresholds: [30, 60, 90, 120, 150, 180], // 分钟数：0.5-3小时
+                labels: ['≤30分钟', '≤1小时', '≤1.5小时', '≤2小时', '≤2.5小时', '≤3小时', '>3小时']
+            }
+        };
+        this.currentLevelScheme = 'hourly';
+        this.currentViewRange = 'year'; // 当前查看范围
+        this.currentYear = new Date().getFullYear();
+        this.currentMonth = new Date().getMonth();
+        this.currentWeek = null;
+        this.setupLevelSchemeSelector();
+        this.updateLegend(); // 初始化图例
+    }
+
+    async loadICAL() {
+        const CDN_URLS = [
+            'https://cdn.jsdelivr.net/npm/ical.js@1.5.0/build/ical.min.js',
+            'https://unpkg.com/ical.js@1.5.0/build/ical.min.js',
+            'https://cdnjs.cloudflare.com/ajax/libs/ical.js/1.5.0/ical.min.js'
+        ];
+
+        for (const url of CDN_URLS) {
+            try {
+                await this.loadScript(url);
+                console.log('ICAL 库加载成功');
+                this.initializeCalendar();
+                return;
+            } catch (error) {
+                console.warn(`从 ${url} 加载 ICAL 失败，尝试下一个源`);
+            }
+        }
+
+        // 所有 CDN 都失败时显示错误
+        this.container = document.getElementById('heatmap');
+        this.container.innerHTML = `
+            <div style="color: red; padding: 20px;">
+                错误: ICAL 库加载失败<br>
+                请检查网络连接或刷新页面重试
+            </div>
+        `;
+    }
+
+    loadScript(url) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = url;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    }
+
+    initializeCalendar() {
         // 检查 ICAL 是否已加载
         if (typeof ICAL === 'undefined') {
             console.error('ICAL 库未加载，请确保已引入 ical.js');
             this.container = document.getElementById('heatmap');
-            this.container.innerHTML = '<p style="color: red;">错误: ICAL 库未加载</p>';
+            this.container.innerHTML = `
+                <div style="
+                    color: var(--error-color); 
+                    padding: 2rem; 
+                    text-align: center;
+                    background: rgba(255, 255, 255, 0.95);
+                    border-radius: var(--radius-lg);
+                    box-shadow: var(--shadow-md);
+                ">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <div>错误: ICAL 库未加载</div>
+                </div>
+            `;
             return;
         }
 
@@ -24,6 +95,7 @@ class CalendarHeatmap {
 
         this.originalData = null; // 存储原始数据
         this.setupSearch(); // 添加搜索功能初始化
+        this.setupTimeRangeControls(); // 添加时间范围控制
         this.showEventCount = true; // 默认显示事务数量
         this.setupOptions(); // 初始化选项
 
@@ -47,6 +119,238 @@ class CalendarHeatmap {
 
         // 初始化配色方案
         this.setupColorScheme();
+
+        // 显示欢迎界面
+        this.showWelcomeScreen();
+    }
+
+    setupTimeRangeControls() {
+        const viewRange = document.getElementById('viewRange');
+        const yearSelect = document.getElementById('yearSelect');
+        const monthSelect = document.getElementById('monthSelect');
+        const weekInput = document.getElementById('weekInput');
+        const applyTimeRange = document.getElementById('applyTimeRange');
+
+        // 监听查看范围变化
+        viewRange.addEventListener('change', () => {
+            this.currentViewRange = viewRange.value;
+            this.updateTimeRangeVisibility();
+        });
+
+        // 监听时间选择变化
+        yearSelect.addEventListener('change', () => {
+            this.currentYear = parseInt(yearSelect.value);
+        });
+
+        monthSelect.addEventListener('change', () => {
+            this.currentMonth = parseInt(monthSelect.value);
+        });
+
+        weekInput.addEventListener('change', () => {
+            this.currentWeek = weekInput.value;
+        });
+
+        // 应用时间范围筛选
+        applyTimeRange.addEventListener('click', () => {
+            this.applyTimeRangeFilter();
+        });
+
+        // 设置默认周输入值
+        const today = new Date();
+        const year = today.getFullYear();
+        const week = this.getWeekNumber(today);
+        weekInput.value = `${year}-W${week.toString().padStart(2, '0')}`;
+    }
+
+    updateTimeRangeVisibility() {
+        const monthSelector = document.getElementById('monthSelector');
+        const weekSelector = document.getElementById('weekSelector');
+
+        monthSelector.style.display = this.currentViewRange === 'month' ? 'flex' : 'none';
+        weekSelector.style.display = this.currentViewRange === 'week' ? 'flex' : 'none';
+    }
+
+    getWeekNumber(date) {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    }
+
+    applyTimeRangeFilter() {
+        if (!this.originalData) {
+            if (window.showNotification) {
+                window.showNotification('⚠️ 请先上传 ICS 文件', 'error');
+            }
+            return;
+        }
+
+        const filteredData = this.filterDataByTimeRange(this.originalData);
+        this.renderStats(filteredData);
+        this.render(filteredData);
+
+        if (window.showNotification) {
+            const eventCount = Object.values(filteredData).reduce((sum, dayData) => 
+                sum + (dayData.events ? dayData.events.length : 0), 0);
+            window.showNotification(`✅ 已筛选出 ${eventCount} 个事件`, 'success');
+        }
+    }
+
+    filterDataByTimeRange(data) {
+        const filteredData = {};
+
+        Object.entries(data).forEach(([dateStr, dayData]) => {
+            const date = new Date(dateStr);
+            let includeDate = false;
+
+            switch (this.currentViewRange) {
+                case 'year':
+                    includeDate = date.getFullYear() === this.currentYear;
+                    break;
+                case 'month':
+                    includeDate = date.getFullYear() === this.currentYear && 
+                                 date.getMonth() === this.currentMonth;
+                    break;
+                case 'week':
+                    if (this.currentWeek) {
+                        const [weekYear, weekNum] = this.currentWeek.split('-W');
+                        const weekStart = this.getDateFromWeek(parseInt(weekYear), parseInt(weekNum));
+                        const weekEnd = new Date(weekStart);
+                        weekEnd.setDate(weekStart.getDate() + 6);
+                        includeDate = date >= weekStart && date <= weekEnd;
+                    }
+                    break;
+            }
+
+            if (includeDate) {
+                filteredData[dateStr] = dayData;
+            }
+        });
+
+        return filteredData;
+    }
+
+    getDateFromWeek(year, week) {
+        const simple = new Date(year, 0, 1 + (week - 1) * 7);
+        const dow = simple.getDay();
+        const ISOweekStart = simple;
+        if (dow <= 4) {
+            ISOweekStart.setDate(simple.getDate() - simple.getDay() + 1);
+        } else {
+            ISOweekStart.setDate(simple.getDate() + 8 - simple.getDay());
+        }
+        return ISOweekStart;
+    }
+
+    showWelcomeScreen() {
+        this.container.innerHTML = `
+            <div style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 4rem 2rem;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: var(--radius-lg);
+                box-shadow: var(--shadow-md);
+                text-align: center;
+                min-height: 400px;
+            ">
+                <div style="font-size: 4rem; margin-bottom: 1.5rem;">📅</div>
+                <h2 style="
+                    color: var(--text-primary); 
+                    font-size: 1.5rem; 
+                    font-weight: 600; 
+                    margin-bottom: 1rem;
+                    margin-top: 0;
+                ">
+                    欢迎使用 Life 打卡日历
+                </h2>
+                <p style="
+                    color: var(--text-secondary); 
+                    font-size: 1rem; 
+                    margin-bottom: 2rem;
+                    max-width: 500px;
+                    line-height: 1.6;
+                ">
+                    上传您的 ICS 日历文件，查看精美的活动热力图，追踪您的生活轨迹和时间分配。
+                </p>
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 1rem;
+                    color: var(--text-muted);
+                    font-size: 0.875rem;
+                ">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-upload" style="color: var(--primary-color);"></i>
+                        支持拖拽上传 ICS 文件
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-search" style="color: var(--primary-color);"></i>
+                        智能搜索和筛选功能
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-palette" style="color: var(--primary-color);"></i>
+                        多种配色方案可选
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-chart-bar" style="color: var(--primary-color);"></i>
+                        详细的统计数据分析
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <i class="fas fa-filter" style="color: var(--primary-color);"></i>
+                        按年、月、周筛选查看
+                    </div>
+                </div>
+            </div>
+        `;
+
+        this.statsContainer.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-calendar-day stat-icon"></i>
+                    总活动天数
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-tasks stat-icon"></i>
+                    总事件数量
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-clock stat-icon"></i>
+                    总活动时长
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-chart-line stat-icon"></i>
+                    平均每日时长
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-fire stat-icon"></i>
+                    最长单日时长
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-percentage stat-icon"></i>
+                    活跃天数比例
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+        `;
     }
 
     setupFileInput() {
@@ -63,21 +367,98 @@ class CalendarHeatmap {
             const file = event.target.files[0];
             if (!file) return;
 
-            console.log('开始读取文件...');
+            // 显示加载状态
+            this.showLoadingState();
+
             const content = await file.text();
-            console.log('文件内容已读取，开始解析...');
             const data = this.parseICSFile(content);
-            console.log('解析完成，开始渲染...');
             
             // 保存原始数据
             this.originalData = data;
+            this.calendarData = data;  // 同时保存当前数据
             
-            this.renderStats(data);
-            this.render(data);
+            // 应用当前的时间范围筛选
+            const filteredData = this.filterDataByTimeRange(data);
+            
+            this.renderStats(filteredData);
+            this.render(filteredData);
+
+            // 显示成功通知
+            if (window.showNotification) {
+                const eventCount = Object.values(data).reduce((sum, dayData) => 
+                    sum + (dayData.events ? dayData.events.length : 0), 0);
+                window.showNotification(`✅ 成功加载 ${eventCount} 个事件！`, 'success');
+            }
+
+            // 隐藏加载状态
+            this.hideLoadingState();
+
         } catch (error) {
             console.error('处理文件失败:', error);
-            this.container.innerHTML = `<p style="color: red;">处理文件失败: ${error.message}</p>`;
+            
+            // 显示错误通知
+            if (window.showNotification) {
+                window.showNotification(`❌ 文件处理失败: ${error.message}`, 'error');
+            }
+            
+            this.container.innerHTML = `
+                <div style="
+                    color: var(--error-color); 
+                    padding: 2rem; 
+                    text-align: center;
+                    background: rgba(255, 255, 255, 0.95);
+                    border-radius: var(--radius-lg);
+                    box-shadow: var(--shadow-md);
+                ">
+                    <i class="fas fa-exclamation-triangle" style="font-size: 2rem; margin-bottom: 1rem;"></i>
+                    <div>处理文件失败: ${error.message}</div>
+                    <div style="margin-top: 0.5rem; font-size: 0.875rem; color: var(--text-muted);">
+                        请确保上传的是有效的 ICS 格式文件
+                    </div>
+                </div>
+            `;
+            
+            // 隐藏加载状态
+            this.hideLoadingState();
         }
+    }
+
+    showLoadingState() {
+        this.container.innerHTML = `
+            <div style="
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 4rem 2rem;
+                background: rgba(255, 255, 255, 0.95);
+                border-radius: var(--radius-lg);
+                box-shadow: var(--shadow-md);
+                text-align: center;
+            ">
+                <div class="loading" style="margin-bottom: 1rem;"></div>
+                <div style="color: var(--text-primary); font-weight: 500; margin-bottom: 0.5rem;">
+                    正在处理文件...
+                </div>
+                <div style="color: var(--text-muted); font-size: 0.875rem;">
+                    请稍候，正在解析您的日历数据
+                </div>
+            </div>
+        `;
+        
+        this.statsContainer.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-title">
+                    <div class="loading" style="width: 16px; height: 16px;"></div>
+                    加载中...
+                </div>
+                <div class="stat-value">-</div>
+            </div>
+        `;
+    }
+
+    hideLoadingState() {
+        // 加载状态会在render函数中被替换，这里不需要特别处理
     }
 
     parseICSFile(icsContent) {
@@ -136,211 +517,227 @@ class CalendarHeatmap {
 
     // 根据活动时长确定颜色等级
     getColorLevel(data) {
-        // 使用总时长而不是最大时长
         const totalDuration = data.totalDuration || 0;
+        const thresholds = this.levelSchemes[this.currentLevelScheme].thresholds;
         
         if (totalDuration === 0) return 0;
-        if (totalDuration <= 60) return 1;  // 总时长不超过1小时
-        if (totalDuration <= 120) return 2; // 总时长不超过2小时
-        if (totalDuration <= 180) return 3; // 总时长不超过3小时
-        return 4;                           // 总时长超过3小时
+        
+        for (let i = 0; i < thresholds.length; i++) {
+            if (totalDuration <= thresholds[i]) {
+                return i + 1;
+            }
+        }
+        return thresholds.length + 1;
     }
 
     // 计算统计数据 - 完全重写以修复计算问题
     calculateStats(data) {
-        const now = new Date();
-        const currentYear = now.getFullYear();
+        // 根据当前查看范围确定年份范围
+        let targetYear = this.currentYear;
+        if (this.currentViewRange === 'year') {
+            // 整年查看时使用选定的年份
+        } else if (this.currentViewRange === 'month') {
+            // 单月查看时使用选定的年份
+        } else if (this.currentViewRange === 'week') {
+            // 单周查看时从周输入中获取年份
+            if (this.currentWeek) {
+                const [weekYear] = this.currentWeek.split('-W');
+                targetYear = parseInt(weekYear);
+            }
+        }
         
-        // 打卡天数 - 确保只计算有效数据且仅计算当年数据
+        // 有效日期筛选
         const validDates = Object.keys(data).filter(dateStr => {
             const dayData = data[dateStr];
             const date = new Date(dateStr);
-            // 只计算当年且有效的运动数据
             return dayData && 
+                   dayData.events && 
                    dayData.events.length > 0 && 
-                   date.getFullYear() === currentYear;
+                   date.getFullYear() === targetYear;
         });
         
-        console.log('有效日期数：', validDates.length);
-        console.log('有效日期列表：', validDates);
-        
-        const totalWorkoutDays = validDates.length;
+        const totalDays = validDates.length;
+        let totalEvents = 0;
+        let totalDuration = 0;
+        let maxDailyDuration = 0;
         
         // 按月统计
         const monthlyStats = Array(12).fill(0);
         
+        // 计算各项统计数据
         for (const dateStr of validDates) {
             const date = new Date(dateStr);
-            monthlyStats[date.getMonth()]++;
+            if (date.getFullYear() === targetYear) {
+                monthlyStats[date.getMonth()]++;
+                
+                const dayData = data[dateStr];
+                if (dayData.events) {
+                    // 累加事件数量
+                    totalEvents += dayData.events.length;
+                    
+                    // 计算当天总时长
+                    const dayTotalDuration = dayData.totalDuration || 
+                                           dayData.events.reduce((sum, event) => sum + (event.duration || 0), 0);
+                    totalDuration += dayTotalDuration;
+                    
+                    // 更新最长单日时长
+                    maxDailyDuration = Math.max(maxDailyDuration, dayTotalDuration);
+                }
+            }
         }
         
-        console.log('月度统计:', monthlyStats);
-        
-        // 修正平均每月打卡计算逻辑
-        // 计算当前经过的月份数（包括当前月）
-        const currentMonth = now.getMonth();
-        const monthsElapsed = currentMonth + 1;
-        
-        // 只计算到目前为止的月份
-        const activeMonthStats = monthlyStats.slice(0, monthsElapsed);
-        const totalActiveDays = activeMonthStats.reduce((sum, count) => sum + count, 0);
-        
-        // 平均每月打卡天数 = 当年打卡天数 / 经过的月份数
-        const avgWorkoutsPerMonth = monthsElapsed > 0 ? (totalActiveDays / monthsElapsed).toFixed(1) : 0;
-        
-        // 计算连续打卡记录 - 彻底重写
+        // 计算连续打卡记录
         let maxStreak = 0;
         
         if (validDates.length > 0) {
-            // 按日期排序
             const sortedDates = validDates.sort();
-            
-            // 转换为日期对象数组，方便计算日期差异
             const dateObjects = sortedDates.map(d => new Date(d));
             
-            // 初始化当前连续天数
             let currentStreak = 1;
             
-            // 遍历所有日期，检查是否连续
             for (let i = 1; i < dateObjects.length; i++) {
                 const prevDate = dateObjects[i-1];
                 const currDate = dateObjects[i];
                 
-                // 计算日期差（以天为单位）
                 const dayDiff = Math.round((currDate - prevDate) / (1000 * 60 * 60 * 24));
                 
                 if (dayDiff === 1) {
-                    // 连续日期
                     currentStreak++;
                 } else {
-                    // 连续中断，重置计数
                     maxStreak = Math.max(maxStreak, currentStreak);
                     currentStreak = 1;
                 }
             }
             
-            // 最后一次检查，确保最后一组连续日期也被计算
             maxStreak = Math.max(maxStreak, currentStreak);
         }
         
-        console.log(`最终连续打卡记录: ${maxStreak}天`);
+        // 计算平均每日时长（根据查看范围调整基数）
+        let totalPossibleDays = 365;
+        if (this.currentViewRange === 'month') {
+            const daysInMonth = new Date(targetYear, this.currentMonth + 1, 0).getDate();
+            totalPossibleDays = daysInMonth;
+        } else if (this.currentViewRange === 'week') {
+            totalPossibleDays = 7;
+        }
+        
+        // 使用总天数而不是有事件的天数计算平均值
+        const avgDailyDuration = totalPossibleDays > 0 ? totalDuration / totalPossibleDays : 0;
+        
+        // 计算活跃天数比例（根据查看范围调整基数）
+        const activeDaysPercentage = ((totalDays / totalPossibleDays) * 100).toFixed(1);
         
         return {
-            totalWorkoutDays,
-            monthlyStats,
-            avgWorkoutsPerMonth,
-            maxStreak
+            totalDays,
+            totalEvents,
+            totalDuration,
+            avgDailyDuration,
+            maxDailyDuration,
+            maxStreak,
+            activeDaysPercentage,
+            monthlyStats
         };
     }
 
     // 渲染统计数据
     renderStats(data) {
         const stats = this.calculateStats(data);
-        this.statsContainer.innerHTML = '';
         
-        // 打卡天数卡片
-        const totalDaysCard = document.createElement('div');
-        totalDaysCard.className = 'stat-card';
-        totalDaysCard.innerHTML = `
-            <div class="stat-title">总打卡天数</div>
-            <div class="stat-value">${stats.totalWorkoutDays}</div>
-        `;
-        
-        // 最长连续打卡卡片
-        const streakCard = document.createElement('div');
-        streakCard.className = 'stat-card';
-        streakCard.innerHTML = `
-            <div class="stat-title">最长连续打卡</div>
-            <div class="stat-value">${stats.maxStreak}天</div>
-        `;
-        
-        // 平均每月打卡卡片
-        const avgCard = document.createElement('div');
-        avgCard.className = 'stat-card';
-        avgCard.innerHTML = `
-            <div class="stat-title">平均每月打卡</div>
-            <div class="stat-value">${stats.avgWorkoutsPerMonth}天</div>
-        `;
-        
-        this.statsContainer.appendChild(totalDaysCard);
-        this.statsContainer.appendChild(streakCard);
-        this.statsContainer.appendChild(avgCard);
-        
-        // 添加调试选项（开发环境可以打开）
-        const isDebug = false;
-        if (isDebug) {
-            // 创建用于显示所有被计算日期的元素
-            const debugCard = document.createElement('div');
-            debugCard.style.marginTop = '20px';
-            debugCard.style.fontSize = '12px';
-            debugCard.style.color = '#666';
-            
-            const validDates = Object.keys(data).filter(dateStr => {
-                const dayData = data[dateStr];
-                const date = new Date(dateStr);
-                return dayData && dayData.events.length > 0 && date.getFullYear() === new Date().getFullYear();
-            }).sort();
-            
-            debugCard.innerHTML = `<div>计算的有效日期 (${validDates.length}):</div>
-                                    <div>${validDates.join(', ')}</div>`;
-                                    
-            this.statsContainer.appendChild(debugCard);
+        // 根据查看范围调整标题
+        let rangeText = '';
+        switch (this.currentViewRange) {
+            case 'year':
+                rangeText = `${this.currentYear}年`;
+                break;
+            case 'month':
+                rangeText = `${this.currentYear}年${this.currentMonth + 1}月`;
+                break;
+            case 'week':
+                if (this.currentWeek) {
+                    const [year, week] = this.currentWeek.split('-W');
+                    rangeText = `${year}年第${week}周`;
+                }
+                break;
         }
+        
+        this.statsContainer.innerHTML = `
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-calendar-day stat-icon"></i>
+                    ${rangeText} 活动天数
+                </div>
+                <div class="stat-value">${stats.totalDays}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-tasks stat-icon"></i>
+                    ${rangeText} 事件数量
+                </div>
+                <div class="stat-value">${stats.totalEvents}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-clock stat-icon"></i>
+                    ${rangeText} 活动时长
+                </div>
+                <div class="stat-value">${this.formatDuration(stats.totalDuration)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-chart-line stat-icon"></i>
+                    平均每日时长
+                </div>
+                <div class="stat-value">${this.formatDuration(stats.avgDailyDuration)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-fire stat-icon"></i>
+                    最长单日时长
+                </div>
+                <div class="stat-value">${this.formatDuration(stats.maxDailyDuration)}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-title">
+                    <i class="fas fa-percentage stat-icon"></i>
+                    活跃天数比例
+                </div>
+                <div class="stat-value">${stats.activeDaysPercentage}%</div>
+            </div>
+        `;
     }
 
-    // 格式化事件详情，用于悬停显示
-    formatEventDetails(dayData) {
-        try {
-            const formatTime = (date) => {
-                if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-                    return "未知时间";
-                }
-                const hours = date.getHours().toString().padStart(2, '0');
-                const minutes = date.getMinutes().toString().padStart(2, '0');
-                return `${hours}:${minutes}`;
-            };
-            
-            const formatDate = (date) => {
-                if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
-                    return "未知日期";
-                }
-                const year = date.getFullYear();
-                const month = (date.getMonth() + 1).toString().padStart(2, '0');
-                const day = date.getDate().toString().padStart(2, '0');
-                return `${year}-${month}-${day}`;
-            };
-
-            // 获取日期（使用第一个事件的日期）
-            const firstEvent = dayData.events[0];
-            let details = `<div class="tooltip-date">📅 ${formatDate(firstEvent.startTime)}</div>`;
-            
-            // 添加所有事件的详情
-            dayData.events.forEach((event, index) => {
-                if (index > 0) {
-                    details += '<div class="tooltip-divider"></div>'; // 添加分隔线
-                }
-                
-                details += `<div class="tooltip-title">${event.summary}</div>`;
-                details += `<div class="tooltip-time">⏱️ ${formatTime(event.startTime)} - ${formatTime(event.endTime)}</div>`;
-                details += `<div class="tooltip-duration">⌛ ${Math.round(event.duration)}分钟</div>`;
-                
-                if (event.location) {
-                    details += `<div class="tooltip-location">📍 ${event.location}</div>`;
-                }
-            });
-            
-            return details;
-        } catch (error) {
-            console.error('格式化事件详情失败:', error);
-            return "活动详情";
+    formatDuration(minutes) {
+        if (minutes < 60) {
+            return `${Math.round(minutes)}分钟`;
+        } else {
+            const hours = Math.floor(minutes / 60);
+            const remainingMinutes = Math.round(minutes % 60);
+            if (remainingMinutes === 0) {
+                return `${hours}小时`;
+            } else {
+                return `${hours}小时${remainingMinutes}分钟`;
+            }
         }
     }
 
     // 渲染热力图
     render(data) {
+        // 缓存当前数据
+        this.calendarData = data;
+        
         this.container.innerHTML = '';
-        const now = new Date();
-        const currentYear = now.getFullYear();
+        
+        // 根据查看范围决定渲染内容
+        if (this.currentViewRange === 'week') {
+            this.renderWeekView(data);
+        } else if (this.currentViewRange === 'month') {
+            this.renderMonthView(data);
+        } else {
+            this.renderYearView(data);
+        }
+    }
+
+    renderYearView(data) {
         const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
 
         // 创建12个月的容器
@@ -383,15 +780,13 @@ class CalendarHeatmap {
             monthGrid.className = 'month-grid';
 
             // 获取当月第一天 - 确保是当前年份的月份
-            const firstDay = new Date(currentYear, month, 1);
+            const firstDay = new Date(this.currentYear, month, 1);
             
             // 获取当月天数
-            const daysInMonth = new Date(currentYear, month + 1, 0).getDate();
+            const daysInMonth = new Date(this.currentYear, month + 1, 0).getDate();
             
             // 获取当月第一天是星期几 (0-6, 0表示星期日)
             const firstDayWeek = firstDay.getDay();
-            
-            console.log(`${currentYear}年${month+1}月第一天: ${firstDay.toISOString().split('T')[0]}, 星期${weekdays[firstDayWeek]}`);
 
             // 添加空白天数
             for (let i = 0; i < firstDayWeek; i++) {
@@ -403,7 +798,7 @@ class CalendarHeatmap {
             // 添加当月所有天数
             for (let day = 1; day <= daysInMonth; day++) {
                 // 使用更准确的日期创建方式
-                const date = new Date(currentYear, month, day);
+                const date = new Date(this.currentYear, month, day);
                 
                 // 确保使用正确的日期格式 YYYY-MM-DD
                 const year = date.getFullYear();
@@ -416,9 +811,6 @@ class CalendarHeatmap {
                 const dayElement = document.createElement('div');
                 dayElement.className = 'day';
                 dayElement.setAttribute('data-date', dateStr);
-                
-                // 显示日期数字以便调试（可选）
-                // dayElement.innerText = day;
 
                 if (dayData && dayData.events && dayData.events.length > 0) {
                     const level = this.getColorLevel(dayData);
@@ -481,11 +873,139 @@ class CalendarHeatmap {
                     monthContainer.style.transform = 'translateY(-2px)';
                     setTimeout(() => {
                         monthContainer.style.transform = '';
-                        this.showMonthDetail(month, currentYear, data);
+                        this.showMonthDetail(month, this.currentYear, data);
                     }, 150);
                 }
             });
         }
+    }
+
+    renderMonthView(data) {
+        // 单月详细视图
+        this.showMonthDetail(this.currentMonth, this.currentYear, data);
+    }
+
+    renderWeekView(data) {
+        if (!this.currentWeek) return;
+
+        const [weekYear, weekNum] = this.currentWeek.split('-W');
+        const weekStart = this.getDateFromWeek(parseInt(weekYear), parseInt(weekNum));
+        const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+
+        const weekContainer = document.createElement('div');
+        weekContainer.className = 'week-container';
+        weekContainer.style.cssText = `
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(20px);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            box-shadow: var(--shadow-md);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        `;
+
+        const weekTitle = document.createElement('h3');
+        weekTitle.textContent = `${weekYear}年第${weekNum}周`;
+        weekTitle.style.cssText = `
+            font-size: 1.5rem;
+            font-weight: 600;
+            margin-bottom: 1.5rem;
+            color: var(--text-primary);
+            text-align: center;
+        `;
+        weekContainer.appendChild(weekTitle);
+
+        const weekGrid = document.createElement('div');
+        weekGrid.style.cssText = `
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1rem;
+        `;
+
+        for (let i = 0; i < 7; i++) {
+            const date = new Date(weekStart);
+            date.setDate(weekStart.getDate() + i);
+            
+            const dateStr = this.formatDateStr(date);
+            const dayData = data[dateStr];
+
+            const dayContainer = document.createElement('div');
+            dayContainer.style.cssText = `
+                background: white;
+                border-radius: var(--radius-md);
+                padding: 1rem;
+                min-height: 200px;
+                border: 1px solid var(--border-color);
+                transition: all 0.2s ease;
+            `;
+
+            const dayHeader = document.createElement('div');
+            dayHeader.style.cssText = `
+                font-weight: 600;
+                margin-bottom: 0.5rem;
+                color: var(--text-primary);
+                text-align: center;
+                padding-bottom: 0.5rem;
+                border-bottom: 1px solid var(--border-color);
+            `;
+            dayHeader.textContent = `${weekdays[i]} ${date.getDate()}日`;
+            dayContainer.appendChild(dayHeader);
+
+            if (dayData && dayData.events && dayData.events.length > 0) {
+                const totalDuration = dayData.totalDuration || 
+                                     dayData.events.reduce((sum, event) => sum + event.duration, 0);
+                
+                const durationInfo = document.createElement('div');
+                durationInfo.style.cssText = `
+                    font-size: 0.875rem;
+                    color: var(--text-secondary);
+                    margin-bottom: 0.5rem;
+                    text-align: center;
+                `;
+                durationInfo.textContent = `总时长: ${this.formatDuration(totalDuration)}`;
+                dayContainer.appendChild(durationInfo);
+
+                dayData.events.forEach(event => {
+                    const eventElement = document.createElement('div');
+                    eventElement.style.cssText = `
+                        background: rgba(102, 126, 234, 0.1);
+                        border-left: 3px solid var(--primary-color);
+                        padding: 0.5rem;
+                        margin-bottom: 0.5rem;
+                        border-radius: var(--radius-sm);
+                        font-size: 0.875rem;
+                    `;
+                    
+                    const startTime = event.startTime.toLocaleTimeString('zh-CN', { 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+                    
+                    eventElement.innerHTML = `
+                        <div style="font-weight: 500; margin-bottom: 0.25rem;">${event.summary}</div>
+                        <div style="color: var(--text-muted); font-size: 0.75rem;">
+                            ${startTime} · ${this.formatDuration(event.duration)}
+                        </div>
+                    `;
+                    
+                    dayContainer.appendChild(eventElement);
+                });
+            } else {
+                const noEvents = document.createElement('div');
+                noEvents.style.cssText = `
+                    color: var(--text-muted);
+                    text-align: center;
+                    margin-top: 2rem;
+                    font-style: italic;
+                `;
+                noEvents.textContent = '无活动';
+                dayContainer.appendChild(noEvents);
+            }
+
+            weekGrid.appendChild(dayContainer);
+        }
+
+        weekContainer.appendChild(weekGrid);
+        this.container.appendChild(weekContainer);
     }
 
     // 修改显示工具提示的方法
@@ -588,9 +1108,12 @@ class CalendarHeatmap {
             }
         });
 
+        // 应用时间范围筛选
+        const timeFilteredData = this.filterDataByTimeRange(filteredData);
+
         // 重新渲染日历和统计信息
-        this.renderStats(filteredData);
-        this.render(filteredData);
+        this.renderStats(timeFilteredData);
+        this.render(timeFilteredData);
     }
 
     // 重置搜索
@@ -601,8 +1124,9 @@ class CalendarHeatmap {
         }
         
         if (this.originalData) {
-            this.renderStats(this.originalData);
-            this.render(this.originalData);
+            const filteredData = this.filterDataByTimeRange(this.originalData);
+            this.renderStats(filteredData);
+            this.render(filteredData);
         }
     }
 
@@ -611,7 +1135,10 @@ class CalendarHeatmap {
         if (showEventCountCheckbox) {
             showEventCountCheckbox.addEventListener('change', (e) => {
                 this.showEventCount = e.target.checked;
-                this.render(this.originalData); // 重新渲染日历
+                if (this.originalData) {
+                    const filteredData = this.filterDataByTimeRange(this.originalData);
+                    this.render(filteredData); // 重新渲染日历
+                }
             });
         }
     }
@@ -729,7 +1256,7 @@ class CalendarHeatmap {
                     const eventElement = document.createElement('div');
                     eventElement.className = 'detailed-event';
                     
-                    // 根据事件时长设置颜色
+                    // 使用当前等级划分方案计算颜色等级
                     const level = this.getSingleEventColorLevel(event.duration);
                     eventElement.setAttribute('data-level', level);
                     
@@ -784,11 +1311,16 @@ class CalendarHeatmap {
     
     // 根据单个事件的时长确定颜色等级
     getSingleEventColorLevel(duration) {
+        const thresholds = this.levelSchemes[this.currentLevelScheme].thresholds;
+        
         if (duration === 0) return 0;
-        if (duration <= 60) return 1;   // 不超过1小时
-        if (duration <= 120) return 2;  // 不超过2小时
-        if (duration <= 180) return 3;  // 不超过3小时
-        return 4;                        // 超过3小时
+        
+        for (let i = 0; i < thresholds.length; i++) {
+            if (duration <= thresholds[i]) {
+                return i + 1;
+            }
+        }
+        return thresholds.length + 1;
     }
     
     // 格式化单个事件的详细信息
@@ -861,12 +1393,22 @@ class CalendarHeatmap {
         
         // 计算持续时间的文本表示
         const formatDuration = (minutes) => {
-            if (minutes < 60) {
-                return `${minutes}分钟`;
+            if (this.currentLevelScheme === 'halfHour') {
+                if (minutes < 60) {
+                    return `${minutes}分钟`;
+                } else {
+                    const hours = Math.floor(minutes / 60);
+                    const mins = minutes % 60;
+                    return mins > 0 ? `${hours}小时${mins}分钟` : `${hours}小时`;
+                }
             } else {
-                const hours = Math.floor(minutes / 60);
-                const mins = minutes % 60;
-                return mins > 0 ? `${hours}小时${mins}分钟` : `${hours}小时`;
+                if (minutes < 60) {
+                    return `${minutes}分钟`;
+                } else {
+                    const hours = Math.floor(minutes / 60);
+                    const mins = minutes % 60;
+                    return mins > 0 ? `${hours}小时${mins}分钟` : `${hours}小时`;
+                }
             }
         };
         
@@ -962,7 +1504,11 @@ class CalendarHeatmap {
             'color-scheme-blue',
             'color-scheme-red',
             'color-scheme-purple',
-            'color-scheme-orange'
+            'color-scheme-orange',
+            'color-scheme-teal',
+            'color-scheme-pink',
+            'color-scheme-brown',
+            'color-scheme-gray'
         );
         
         // 如果不是绿色系（默认），则添加相应的配色类
@@ -976,11 +1522,136 @@ class CalendarHeatmap {
             'blue': '蓝色系',
             'red': '红色系',
             'purple': '紫色系',
-            'orange': '橙色系'
+            'orange': '橙色系',
+            'teal': '青色系',
+            'pink': '粉色系',
+            'brown': '棕色系',
+            'gray': '灰色系'
         };
         
         // 如果需要，可以在界面上其他地方显示当前配色方案名称
         console.log(`应用配色方案: ${schemeTitles[scheme]}`);
+    }
+
+    setupLevelSchemeSelector() {
+        const levelSchemeSelect = document.getElementById('levelScheme');
+        levelSchemeSelect.addEventListener('change', (e) => {
+            this.currentLevelScheme = e.target.value;
+            this.updateLegend();
+            // 如果有数据，则重新渲染
+            if (this.originalData) {
+                this.render(this.originalData);
+            }
+        });
+    }
+
+    updateLegend() {
+        const labels = this.levelSchemes[this.currentLevelScheme].labels;
+        const legendContainer = document.querySelector('.color-legend');
+        
+        // 保留"无活动"的图例
+        const noActivityLegend = legendContainer.children[1];
+        legendContainer.innerHTML = '<span>颜色图例：</span>';
+        legendContainer.appendChild(noActivityLegend);
+
+        // 添加新的图例
+        labels.forEach((label, index) => {
+            if (index === labels.length - 1) return; // 跳过最后一个（用于">X小时"）
+            const legendItem = document.createElement('div');
+            legendItem.className = 'legend-item';
+            legendItem.innerHTML = `
+                <div class="legend-color" data-level="${index + 1}"></div>
+                <span>${label}</span>
+            `;
+            legendContainer.appendChild(legendItem);
+        });
+
+        // 添加最后一个图例（>X小时）
+        const lastLegendItem = document.createElement('div');
+        lastLegendItem.className = 'legend-item';
+        lastLegendItem.innerHTML = `
+            <div class="legend-color" data-level="${labels.length}"></div>
+            <span>${labels[labels.length - 1]}</span>
+        `;
+        legendContainer.appendChild(lastLegendItem);
+    }
+
+    // 格式化事件详情，用于悬停显示 - 添加当日总时长
+    formatEventDetails(dayData) {
+        try {
+            const formatTime = (date) => {
+                if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+                    return "未知时间";
+                }
+                const hours = date.getHours().toString().padStart(2, '0');
+                const minutes = date.getMinutes().toString().padStart(2, '0');
+                return `${hours}:${minutes}`;
+            };
+            
+            const formatDate = (date) => {
+                if (!date || !(date instanceof Date) || isNaN(date.getTime())) {
+                    return "未知日期";
+                }
+                const year = date.getFullYear();
+                const month = (date.getMonth() + 1).toString().padStart(2, '0');
+                const day = date.getDate().toString().padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            };
+            
+            // 格式化持续时间为"小时+分钟"格式
+            const formatDuration = (minutes) => {
+                if (this.currentLevelScheme === 'halfHour') {
+                    if (minutes < 60) {
+                        return `${Math.round(minutes)}分钟`;
+                    } else {
+                        const hours = Math.floor(minutes / 60);
+                        const mins = Math.round(minutes % 60);
+                        return mins > 0 ? `${hours}小时${mins}分钟` : `${hours}小时`;
+                    }
+                } else {
+                    if (minutes < 60) {
+                        return `${Math.round(minutes)}分钟`;
+                    } else {
+                        const hours = Math.floor(minutes / 60);
+                        const mins = Math.round(minutes % 60);
+                        return mins > 0 ? `${hours}小时${mins}分钟` : `${hours}小时`;
+                    }
+                }
+            };
+
+            // 获取日期（使用第一个事件的日期）
+            const firstEvent = dayData.events[0];
+            let details = `<div class="tooltip-date">📅 ${formatDate(firstEvent.startTime)}</div>`;
+            
+            // 添加当日总时长信息
+            const totalDuration = dayData.totalDuration || 
+                                 dayData.events.reduce((sum, event) => sum + (event.duration || 0), 0);
+            
+            details += `<div class="tooltip-total-duration">总时长: ${formatDuration(totalDuration)}</div>`;
+            
+            // 添加分隔线
+            details += '<div class="tooltip-divider"></div>';
+            
+            // 添加所有事件的详情
+            dayData.events.forEach((event, index) => {
+                if (index > 0) {
+                    details += '<div class="tooltip-divider"></div>'; // 添加事件间分隔线
+                }
+                
+                details += `<div class="tooltip-title">${event.summary}</div>`;
+                details += `<div class="tooltip-time">⏱️ ${formatTime(event.startTime)} - ${formatTime(event.endTime)}</div>`;
+                details += `<div class="tooltip-duration">⌛ 时长: ${formatDuration(event.duration)}</div>`;
+                
+                if (event.location) {
+                    details += `<div class="tooltip-location">📍 ${event.location}</div>`;
+                }
+            });
+            
+            return details;
+        } catch (error) {
+            console.error('格式化事件详情失败:', error);
+            return "活动详情";
+        }
     }
 }
 
